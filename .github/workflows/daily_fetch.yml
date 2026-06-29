@@ -1,0 +1,38 @@
+name: Fetch vigieau daily
+
+on:
+  schedule:
+    # Tous les jours à 7h UTC (9h Paris en été)
+    - cron: "0 7 * * *"
+  workflow_dispatch: # permet de lancer manuellement depuis GitHub
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch et génère le GeoJSON
+        run: python fetch_vigieau.py
+
+      - name: Commit et push si changement
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "Aucun changement détecté."
+          else
+            DATE=$(date +%Y-%m-%d)
+            git commit -m "data: vigieau $DATE"
+            git push
+          fi
