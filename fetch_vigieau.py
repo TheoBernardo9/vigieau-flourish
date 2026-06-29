@@ -67,7 +67,7 @@ def dept_features(depts_geojson: dict) -> list:
                 "type_zone": "departement",
                 "niveau": "",
                 "niveau_label": "Aucune restriction",
-                "severity": 0,
+                "severity": "",
                 "arrete_numero": "",
                 "debut": "",
                 "fin": "",
