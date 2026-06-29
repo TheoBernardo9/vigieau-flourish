@@ -7,6 +7,7 @@ Récupère le GeoJSON vigieau (zones de restriction sécheresse) et le prépare 
 """
 
 import json
+import csv
 import urllib.request
 import datetime
 import os
@@ -41,6 +42,22 @@ TYPE_LABEL = {
     "SOU": "Eaux souterraines",
     "SUP": "Eaux de surface",
     "AEP": "Eau du robinet",
+}
+
+NIVEAU_COLOR = {
+    "vigilance":       "#fff9bd",
+    "alerte":          "orange",
+    "alerte_renforcee": "red",
+    "crise":           "maroon",
+    "":                "#e6e6e6",
+}
+
+NIVEAU_TEXT_COLOR = {
+    "vigilance":       "#333",
+    "alerte":          "#fff",
+    "alerte_renforcee": "#fff",
+    "crise":           "#fff",
+    "":                "#666",
 }
 
 MOIS = ["jan.", "fév.", "mars", "avr.", "mai", "juin",
@@ -91,12 +108,18 @@ def simplify_geometry(geom, tolerance=0.001):
         return geom
 
 
-def build_detail(type_zone: str, niveau_label: str, debut: str, fin: str, nom: str) -> str:
+def badge(niveau: str, niveau_label: str) -> str:
+    bg = NIVEAU_COLOR.get(niveau, "#e6e6e6")
+    color = NIVEAU_TEXT_COLOR.get(niveau, "#333")
+    label = niveau_label or "Aucune restriction"
+    return (f'<span style="background:{bg};color:{color};padding:2px 7px;'
+            f'border-radius:4px;font-weight:bold;font-size:0.85em">{label}</span>')
+
+
+def build_detail(type_zone: str, niveau: str, niveau_label: str, debut: str, fin: str, nom: str) -> str:
     """Formate le bloc HTML d'une couche pour le popup."""
     label = TYPE_LABEL.get(type_zone, type_zone)
-    parts = [f"<b>{label}</b>"]
-    if niveau_label:
-        parts.append(f"• {niveau_label}")
+    parts = [f"<b>{label}</b>", badge(niveau, niveau_label)]
     if debut and fin:
         parts.append(f"du {format_date(debut)} au {format_date(fin)}")
     elif debut:
@@ -116,7 +139,7 @@ def build_combined_detail(layers: dict) -> str:
         if t not in layers:
             continue
         info = layers[t]
-        blocks.append(build_detail(t, info["niveau_label"], info["debut"], info["fin"], info["nom"]))
+        blocks.append(build_detail(t, info["niveau"], info["niveau_label"], info["debut"], info["fin"], info["nom"]))
     return "<br><br>".join(blocks)
 
 
@@ -218,6 +241,7 @@ def enrich_combined_detail(all_zones: list) -> list:
             if best:
                 bp = best["properties"]
                 layers[t] = {
+                    "niveau": bp.get("niveau", ""),
                     "niveau_label": bp.get("niveau_label", ""),
                     "debut": bp.get("debut", ""),
                     "fin": bp.get("fin", ""),
@@ -290,6 +314,7 @@ def zone_features(zones_raw: list) -> list:
                 "fin": arrete.get("dateFin", ""),
                 "detail": build_detail(
                     type_zone,
+                    niveau,
                     NIVEAUX.get(niveau, niveau),
                     arrete.get("dateDebut", ""),
                     arrete.get("dateFin", ""),
@@ -317,6 +342,18 @@ def build_geojson(dept_feats: list, zone_feats: list) -> dict:
 def save(data: dict, path: str):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
+
+
+def save_csv(features: list, path: str):
+    """Export CSV des propriétés (sans géométrie) pour Flourish live data."""
+    cols = ["id", "nom", "departement_code", "departement_nom", "type_zone",
+            "niveau", "niveau_label", "severity", "debut", "fin", "arrete_numero", "detail"]
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+        w.writeheader()
+        for feat in features:
+            if feat["properties"].get("type_zone") != "departement":
+                w.writerow(feat["properties"])
 
 
 def main():
@@ -351,6 +388,15 @@ def main():
     counts = Counter(f["properties"]["niveau"] for f in all_zones)
     for niveau, label in NIVEAUX.items():
         print(f"  {label:<20} : {counts.get(niveau, 0)}")
+
+    # CSV live data pour Flourish (sans géométrie, URL stable)
+    CSV_DIR = os.path.join(DATA_DIR, "csv")
+    os.makedirs(CSV_DIR, exist_ok=True)
+    for type_code, type_name in [("SUP", "surface"), ("SOU", "souterrain"), ("AEP", "robinet")]:
+        filtered = [f for f in all_zones if f["properties"]["type_zone"] == type_code]
+        save_csv(filtered, os.path.join(CSV_DIR, f"{type_name}.csv"))
+    save_csv(all_zones_enriched, os.path.join(CSV_DIR, "complet.csv"))
+    print(f"\nCSV live : data/csv/surface.csv / souterrain.csv / robinet.csv / complet.csv")
 
     print(f"\nLatest  : data/latest/surface.geojson / souterrain.geojson / robinet.geojson / complet.geojson")
     print(f"Archives: data/archives/vigieau_*_{today}.geojson")
