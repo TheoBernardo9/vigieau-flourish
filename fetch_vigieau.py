@@ -17,6 +17,8 @@ from shapely.validation import make_valid
 GEOJSON_URL = "https://regleau.s3.gra.perf.cloud.ovh.net/geojson/zones_arretes_en_vigueur.geojson"
 DEPTS_URL = "https://raw.githubusercontent.com/gregoiredavid/france-geojson/master/departements-version-simplifiee.geojson"
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+LATEST_DIR = os.path.join(DATA_DIR, "latest")
+ARCHIVES_DIR = os.path.join(DATA_DIR, "archives")
 
 NIVEAUX = {
     "vigilance": "Vigilance",
@@ -182,7 +184,8 @@ def save(data: dict, path: str):
 
 
 def main():
-    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(LATEST_DIR, exist_ok=True)
+    os.makedirs(ARCHIVES_DIR, exist_ok=True)
     today = datetime.date.today().isoformat()
 
     depts_raw = fetch_geojson(DEPTS_URL)
@@ -195,15 +198,16 @@ def main():
         filtered = [f for f in all_zones if f["properties"]["type_zone"] == type_code]
         geojson = build_geojson(base, filtered)
 
-        save(geojson, os.path.join(DATA_DIR, f"vigieau_{type_name}_{today}.geojson"))
-        save(geojson, os.path.join(DATA_DIR, f"latest_{type_name}.geojson"))
+        save(geojson, os.path.join(ARCHIVES_DIR, f"vigieau_{type_name}_{today}.geojson"))
+        save(geojson, os.path.join(LATEST_DIR, f"{type_name}.geojson"))
 
         counts = Counter(f["properties"]["niveau"] for f in filtered)
         print(f"\n── {TYPE_LABEL[type_code]} ({len(filtered)} zones) ──")
         for niveau, label in NIVEAUX.items():
             print(f"  {label:<20} : {counts.get(niveau, 0)}")
 
-    print(f"\nFichiers : latest_surface.geojson / latest_souterrain.geojson / latest_robinet.geojson")
+    print(f"\nLatest  : data/latest/surface.geojson / souterrain.geojson / robinet.geojson")
+    print(f"Archives: data/archives/vigieau_*_{today}.geojson")
 
 
 if __name__ == "__main__":
