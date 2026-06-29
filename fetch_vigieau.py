@@ -371,34 +371,36 @@ def save_csv(features: list, path: str, with_geom: bool = False):
 
 
 def main():
+    os.makedirs(LATEST_DIR, exist_ok=True)
+    os.makedirs(ARCHIVES_DIR, exist_ok=True)
     CSV_DIR = os.path.join(DATA_DIR, "csv")
     os.makedirs(CSV_DIR, exist_ok=True)
     today = datetime.date.today().isoformat()
 
+    depts_raw = fetch_geojson(DEPTS_URL)
     zones_raw = fetch_geojson(GEOJSON_URL)
+    base = dept_features(depts_raw)
     all_zones = zone_features(zones_raw.get("features", []))
 
-    GEO_DIR = os.path.join(DATA_DIR, "csv-geo")
-    os.makedirs(GEO_DIR, exist_ok=True)
-
-    # CSV par type
     for type_code, type_name in [("SUP", "surface"), ("SOU", "souterrain"), ("AEP", "robinet")]:
         filtered = [f for f in all_zones if f["properties"]["type_zone"] == type_code]
+        geojson = build_geojson(base, filtered)
+        save(geojson, os.path.join(ARCHIVES_DIR, f"vigieau_{type_name}_{today}.geojson"))
+        save(geojson, os.path.join(LATEST_DIR, f"{type_name}.geojson"))
         save_csv(filtered, os.path.join(CSV_DIR, f"{type_name}.csv"), with_geom=False)
-        save_csv(filtered, os.path.join(GEO_DIR, f"{type_name}.csv"), with_geom=True)
         counts = Counter(f["properties"]["niveau"] for f in filtered)
         print(f"\n── {TYPE_LABEL[type_code]} ({len(filtered)} zones) ──")
         for niveau, label in NIVEAUX.items():
             print(f"  {label:<20} : {counts.get(niveau, 0)}")
 
-    # CSV combiné avec popup 3 couches
     all_zones_enriched = enrich_combined_detail(all_zones)
+    combined = build_geojson(base, all_zones_enriched)
+    save(combined, os.path.join(ARCHIVES_DIR, f"vigieau_complet_{today}.geojson"))
+    save(combined, os.path.join(LATEST_DIR, "complet.geojson"))
     save_csv(all_zones_enriched, os.path.join(CSV_DIR, "complet.csv"), with_geom=False)
-    save_csv(all_zones_enriched, os.path.join(GEO_DIR, "complet.csv"), with_geom=True)
     print(f"\n── Combiné ({len(all_zones_enriched)} zones) ──")
-
-    print(f"\ndata/csv/      → sans géométrie (jointure par id sur reference_zones.geojson)")
-    print(f"data/csv-geo/  → avec géométrie WKT (standalone dans Flourish)")
+    print(f"\nLatest  : data/latest/*.geojson")
+    print(f"CSV     : data/csv/*.csv (sans géométrie, jointure par id)")
     print(f"Mis à jour : {today}")
 
 
