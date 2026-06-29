@@ -166,12 +166,8 @@ def zone_features(zones_raw: list) -> list:
     return features
 
 
-def build_flourish_geojson(depts: dict, zones: dict) -> dict:
-    raw = zones.get("features", [])
-
-    features = dept_features(depts)
-    features += zone_features(raw)
-
+def build_geojson(dept_feats: list, zone_feats: list) -> dict:
+    features = dept_feats + zone_feats
     return {
         "type": "FeatureCollection",
         "generated_at": datetime.date.today().isoformat(),
@@ -180,29 +176,34 @@ def build_flourish_geojson(depts: dict, zones: dict) -> dict:
     }
 
 
+def save(data: dict, path: str):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
+
+
 def main():
     os.makedirs(DATA_DIR, exist_ok=True)
     today = datetime.date.today().isoformat()
 
-    depts = fetch_geojson(DEPTS_URL)
-    zones = fetch_geojson(GEOJSON_URL)
-    flourish = build_flourish_geojson(depts, zones)
+    depts_raw = fetch_geojson(DEPTS_URL)
+    zones_raw = fetch_geojson(GEOJSON_URL)
 
-    dated_path = os.path.join(DATA_DIR, f"vigieau_{today}.geojson")
-    with open(dated_path, "w", encoding="utf-8") as f:
-        json.dump(flourish, f, ensure_ascii=False, separators=(",", ":"))
-    print(f"Sauvegardé : {dated_path}  ({flourish['total_features']} features)")
+    base = dept_features(depts_raw)
+    all_zones = zone_features(zones_raw.get("features", []))
 
-    latest_path = os.path.join(DATA_DIR, "latest.geojson")
-    with open(latest_path, "w", encoding="utf-8") as f:
-        json.dump(flourish, f, ensure_ascii=False, separators=(",", ":"))
-    print(f"Mis à jour  : {latest_path}")
+    for type_code, type_name in [("SUP", "surface"), ("SOU", "souterrain"), ("AEP", "robinet")]:
+        filtered = [f for f in all_zones if f["properties"]["type_zone"] == type_code]
+        geojson = build_geojson(base, filtered)
 
-    counts = Counter(f["properties"]["niveau"] for f in flourish["features"])
-    print("\nRépartition :")
-    print(f"  Départements base   : {sum(1 for f in flourish['features'] if f['properties']['type_zone'] == 'departement')}")
-    for niveau, label in NIVEAUX.items():
-        print(f"  {label:<20} : {counts.get(niveau, 0)}")
+        save(geojson, os.path.join(DATA_DIR, f"vigieau_{type_name}_{today}.geojson"))
+        save(geojson, os.path.join(DATA_DIR, f"latest_{type_name}.geojson"))
+
+        counts = Counter(f["properties"]["niveau"] for f in filtered)
+        print(f"\n── {TYPE_LABEL[type_code]} ({len(filtered)} zones) ──")
+        for niveau, label in NIVEAUX.items():
+            print(f"  {label:<20} : {counts.get(niveau, 0)}")
+
+    print(f"\nFichiers : latest_surface.geojson / latest_souterrain.geojson / latest_robinet.geojson")
 
 
 if __name__ == "__main__":
