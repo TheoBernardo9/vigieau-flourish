@@ -357,49 +357,29 @@ def save_csv(features: list, path: str):
 
 
 def main():
-    os.makedirs(LATEST_DIR, exist_ok=True)
-    os.makedirs(ARCHIVES_DIR, exist_ok=True)
+    CSV_DIR = os.path.join(DATA_DIR, "csv")
+    os.makedirs(CSV_DIR, exist_ok=True)
     today = datetime.date.today().isoformat()
 
-    depts_raw = fetch_geojson(DEPTS_URL)
     zones_raw = fetch_geojson(GEOJSON_URL)
-
-    base = dept_features(depts_raw)
     all_zones = zone_features(zones_raw.get("features", []))
 
+    # CSV par type
     for type_code, type_name in [("SUP", "surface"), ("SOU", "souterrain"), ("AEP", "robinet")]:
         filtered = [f for f in all_zones if f["properties"]["type_zone"] == type_code]
-        geojson = build_geojson(base, filtered)
-
-        save(geojson, os.path.join(ARCHIVES_DIR, f"vigieau_{type_name}_{today}.geojson"))
-        save(geojson, os.path.join(LATEST_DIR, f"{type_name}.geojson"))
-
+        save_csv(filtered, os.path.join(CSV_DIR, f"{type_name}.csv"))
         counts = Counter(f["properties"]["niveau"] for f in filtered)
         print(f"\n── {TYPE_LABEL[type_code]} ({len(filtered)} zones) ──")
         for niveau, label in NIVEAUX.items():
             print(f"  {label:<20} : {counts.get(niveau, 0)}")
 
-    # Fichier combiné : jointure spatiale pour popup 3 couches
+    # CSV combiné avec popup 3 couches
     all_zones_enriched = enrich_combined_detail(all_zones)
-    combined = build_geojson(base, all_zones_enriched)
-    save(combined, os.path.join(ARCHIVES_DIR, f"vigieau_complet_{today}.geojson"))
-    save(combined, os.path.join(LATEST_DIR, "complet.geojson"))
-    print(f"\n── Combiné ({len(all_zones)} zones toutes couches) ──")
-    counts = Counter(f["properties"]["niveau"] for f in all_zones)
-    for niveau, label in NIVEAUX.items():
-        print(f"  {label:<20} : {counts.get(niveau, 0)}")
-
-    # CSV live data pour Flourish (sans géométrie, URL stable)
-    CSV_DIR = os.path.join(DATA_DIR, "csv")
-    os.makedirs(CSV_DIR, exist_ok=True)
-    for type_code, type_name in [("SUP", "surface"), ("SOU", "souterrain"), ("AEP", "robinet")]:
-        filtered = [f for f in all_zones if f["properties"]["type_zone"] == type_code]
-        save_csv(filtered, os.path.join(CSV_DIR, f"{type_name}.csv"))
     save_csv(all_zones_enriched, os.path.join(CSV_DIR, "complet.csv"))
-    print(f"\nCSV live : data/csv/surface.csv / souterrain.csv / robinet.csv / complet.csv")
+    print(f"\n── Combiné ({len(all_zones_enriched)} zones) ──")
 
-    print(f"\nLatest  : data/latest/surface.geojson / souterrain.geojson / robinet.geojson / complet.geojson")
-    print(f"Archives: data/archives/vigieau_*_{today}.geojson")
+    print(f"\nCSV mis à jour : data/csv/ ({today})")
+    print("Boundaries fixes : data/reference_zones.geojson (lancer build_reference.py une fois)")
 
 
 if __name__ == "__main__":
