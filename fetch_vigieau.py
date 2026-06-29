@@ -32,6 +32,37 @@ SEVERITY = {
     "crise": 4,
 }
 
+TYPE_ZONE = {
+    "SUP": "Eaux de surface",
+    "SOU": "Eaux souterraines",
+    "AEP": "Eau du robinet",
+}
+
+def format_date(d: str) -> str:
+    """2026-06-27 → 27 juin 2026"""
+    if not d:
+        return ""
+    mois = ["jan.", "fév.", "mars", "avr.", "mai", "juin",
+            "juil.", "août", "sept.", "oct.", "nov.", "déc."]
+    try:
+        y, m, day = d.split("-")
+        return f"{int(day)} {mois[int(m)-1]} {y}"
+    except Exception:
+        return d
+
+def build_detail(type_zone: str, niveau_label: str, debut: str, fin: str, nom: str) -> str:
+    type_label = TYPE_ZONE.get(type_zone, type_zone)
+    parts = [type_label]
+    if niveau_label:
+        parts.append(f"• {niveau_label}")
+    if debut and fin:
+        parts.append(f"du {format_date(debut)} au {format_date(fin)}")
+    elif debut:
+        parts.append(f"depuis le {format_date(debut)}")
+    if nom:
+        parts.append(nom)
+    return "\n".join(parts)
+
 
 def fetch_geojson(url: str) -> dict:
     print(f"Téléchargement de {url}…")
@@ -109,6 +140,13 @@ def zone_feature(feature: dict) -> dict:
             "debut": arrete.get("dateDebut", ""),
             "fin": arrete.get("dateFin", ""),
             "date_signature": arrete.get("dateSignature", ""),
+            "detail": build_detail(
+                p.get("type", ""),
+                NIVEAUX.get(niveau, niveau),
+                arrete.get("dateDebut", ""),
+                arrete.get("dateFin", ""),
+                p.get("nom", ""),
+            ),
         },
     }
 
