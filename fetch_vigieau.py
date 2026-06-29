@@ -214,7 +214,17 @@ def main():
         for niveau, label in NIVEAUX.items():
             print(f"  {label:<20} : {counts.get(niveau, 0)}")
 
-    print(f"\nLatest  : data/latest/surface.geojson / souterrain.geojson / robinet.geojson")
+    # Fichier combiné : toutes les couches triées par sévérité croissante
+    # → les zones les plus critiques sont rendues en dernier (visuellement au-dessus)
+    combined = build_geojson(base, all_zones)
+    save(combined, os.path.join(ARCHIVES_DIR, f"vigieau_complet_{today}.geojson"))
+    save(combined, os.path.join(LATEST_DIR, "complet.geojson"))
+    print(f"\n── Combiné ({len(all_zones)} zones toutes couches) ──")
+    counts = Counter(f["properties"]["niveau"] for f in all_zones)
+    for niveau, label in NIVEAUX.items():
+        print(f"  {label:<20} : {counts.get(niveau, 0)}")
+
+    print(f"\nLatest  : data/latest/surface.geojson / souterrain.geojson / robinet.geojson / complet.geojson")
     print(f"Archives: data/archives/vigieau_*_{today}.geojson")
 
 
