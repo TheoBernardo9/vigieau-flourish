@@ -76,8 +76,16 @@ def simplify_geometry(geom, tolerance=0.001):
     if not geom:
         return geom
     try:
+        from shapely.geometry import MultiPolygon, GeometryCollection
         s = make_valid(shape(geom))
-        return mapping(s.simplify(tolerance, preserve_topology=True))
+        s = s.simplify(tolerance, preserve_topology=True)
+        # GeometryCollection → extraire uniquement les polygones
+        if isinstance(s, GeometryCollection) and not isinstance(s, MultiPolygon):
+            polys = [g for g in s.geoms if g.geom_type in ("Polygon", "MultiPolygon")]
+            if not polys:
+                return None
+            s = MultiPolygon(polys) if len(polys) > 1 else polys[0]
+        return mapping(s)
     except Exception:
         return geom
 
