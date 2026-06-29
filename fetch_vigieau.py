@@ -11,7 +11,8 @@ import urllib.request
 import datetime
 import os
 from collections import Counter
-from shapely.geometry import shape, mapping
+from shapely.geometry import shape, mapping, MultiPolygon as SMP
+from shapely.strtree import STRtree
 from shapely.validation import make_valid
 
 GEOJSON_URL = "https://regleau.s3.gra.perf.cloud.ovh.net/geojson/zones_arretes_en_vigueur.geojson"
@@ -91,7 +92,7 @@ def simplify_geometry(geom, tolerance=0.001):
 
 
 def build_detail(type_zone: str, niveau_label: str, debut: str, fin: str, nom: str) -> str:
-    """Formate le popup HTML d'une zone."""
+    """Formate le bloc HTML d'une couche pour le popup."""
     label = TYPE_LABEL.get(type_zone, type_zone)
     parts = [f"<b>{label}</b>"]
     if niveau_label:
@@ -101,8 +102,135 @@ def build_detail(type_zone: str, niveau_label: str, debut: str, fin: str, nom: s
     elif debut:
         parts.append(f"depuis le {format_date(debut)}")
     if nom:
-        parts.append(f"<br><small>Zone : {nom}</small>")
+        parts.append(f"<small>Zone : {nom}</small>")
     return "<br>".join(parts)
+
+
+def build_combined_detail(layers: dict) -> str:
+    """
+    layers = {type_code: {niveau, niveau_label, debut, fin, nom}}
+    Construit un popup HTML affichant les 3 couches dans l'ordre SOU/SUP/AEP.
+    """
+    blocks = []
+    for t in TYPE_ORDER:
+        if t not in layers:
+            continue
+        info = layers[t]
+        blocks.append(build_detail(t, info["niveau_label"], info["debut"], info["fin"], info["nom"]))
+    return "<br><br>".join(blocks)
+
+
+def build_spatial_index(features: list):
+    """Retourne (STRtree, liste de shapes) pour une liste de features GeoJSON."""
+    geoms = []
+    for f in features:
+        g = f.get("geometry")
+        try:
+            geoms.append(make_valid(shape(g)) if g else None)
+        except Exception:
+            geoms.append(None)
+    valid = [g for g in geoms if g is not None]
+    tree = STRtree(valid)
+    return tree, geoms
+
+
+def find_overlapping(geom, tree, features, geoms):
+    """Trouve la feature qui chevauche le plus geom dans un layer donné."""
+    if geom is None:
+        return None
+    candidates = tree.query(geom)
+    best = None
+    best_area = 0
+    for idx in candidates:
+        g = geoms[idx]
+        if g is None:
+            continue
+        try:
+            inter = geom.intersection(g)
+            if inter.is_empty:
+                continue
+            a = inter.area
+            if a > best_area:
+                best_area = a
+                best = features[idx]
+        except Exception:
+            continue
+    return best
+
+
+def enrich_combined_detail(all_zones: list) -> list:
+    """
+    Pour chaque zone du fichier combiné, enrichit le popup
+    avec les infos des 3 couches (SUP/SOU/AEP) en faisant une jointure spatiale.
+    """
+    print("Calcul des jointures spatiales pour les popups combinés…")
+
+    # Séparer par type et construire les shapes
+    by_type = {t: [] for t in TYPE_ORDER}
+    shapes_by_type = {t: [] for t in TYPE_ORDER}
+
+    for f in all_zones:
+        t = f["properties"].get("type_zone")
+        if t in by_type:
+            by_type[t].append(f)
+            g = f.get("geometry")
+            try:
+                shapes_by_type[t].append(make_valid(shape(g)) if g else None)
+            except Exception:
+                shapes_by_type[t].append(None)
+
+    # STRtree par type
+    trees = {}
+    for t in TYPE_ORDER:
+        valids = [g for g in shapes_by_type[t] if g is not None]
+        trees[t] = STRtree(valids) if valids else None
+
+    enriched = []
+    for f in all_zones:
+        own_type = f["properties"].get("type_zone")
+        own_geom_raw = f.get("geometry")
+        try:
+            own_geom = make_valid(shape(own_geom_raw)) if own_geom_raw else None
+        except Exception:
+            own_geom = None
+
+        layers = {}
+        for t in TYPE_ORDER:
+            if trees[t] is None or own_geom is None:
+                continue
+            candidates = trees[t].query(own_geom)
+            best = None
+            best_area = 0
+            for idx in candidates:
+                g = shapes_by_type[t][idx]
+                if g is None:
+                    continue
+                try:
+                    inter = own_geom.intersection(g)
+                    if inter.is_empty:
+                        continue
+                    a = inter.area
+                    if a > best_area:
+                        best_area = a
+                        best = by_type[t][idx]
+                except Exception:
+                    continue
+            if best:
+                bp = best["properties"]
+                layers[t] = {
+                    "niveau_label": bp.get("niveau_label", ""),
+                    "debut": bp.get("debut", ""),
+                    "fin": bp.get("fin", ""),
+                    "nom": bp.get("nom", ""),
+                }
+
+        new_f = dict(f)
+        new_f["properties"] = dict(f["properties"])
+        new_f["properties"]["detail"] = build_combined_detail(layers) if layers else f["properties"].get("detail", "")
+        enriched.append(new_f)
+
+    print("Jointures spatiales terminées.")
+    return enriched
 
 
 def dept_features(depts_geojson: dict) -> list:
@@ -214,9 +342,9 @@ def main():
         for niveau, label in NIVEAUX.items():
             print(f"  {label:<20} : {counts.get(niveau, 0)}")
 
-    # Fichier combiné : toutes les couches triées par sévérité croissante
-    # → les zones les plus critiques sont rendues en dernier (visuellement au-dessus)
-    combined = build_geojson(base, all_zones)
+    # Fichier combiné : jointure spatiale pour popup 3 couches
+    all_zones_enriched = enrich_combined_detail(all_zones)
+    combined = build_geojson(base, all_zones_enriched)
     save(combined, os.path.join(ARCHIVES_DIR, f"vigieau_complet_{today}.geojson"))
     save(combined, os.path.join(LATEST_DIR, "complet.geojson"))
     print(f"\n── Combiné ({len(all_zones)} zones toutes couches) ──")
