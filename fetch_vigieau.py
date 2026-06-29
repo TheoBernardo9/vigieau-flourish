@@ -10,7 +10,7 @@ import json
 import urllib.request
 import datetime
 import os
-from collections import Counter, defaultdict
+from collections import Counter
 from shapely.geometry import shape, mapping
 from shapely.validation import make_valid
 
@@ -80,54 +80,19 @@ def simplify_geometry(geom, tolerance=0.001):
         return geom
 
 
-def build_arrete_details(zones_raw: list) -> dict:
-    """
-    Construit un dict {arrete_id → detail_text} en regroupant
-    les couches SOU/SUP/AEP d'un même arrêté préfectoral.
-    """
-    # Groupe par arrêté ID → liste de (type_zone, niveauGravite, dateDebut, dateFin)
-    groups = defaultdict(dict)  # arrete_id → {type: (niveau, debut, fin, numero)}
-
-    for f in zones_raw:
-        p = f.get("properties") or {}
-        dept = p.get("departement") or {}
-        dept_code = dept.get("code", "") if isinstance(dept, dict) else ""
-        if dept_code and is_dom_tom(dept_code):
-            continue
-
-        arrete = p.get("arreteRestriction") or {}
-        arrete_id = arrete.get("id")
-        if not arrete_id:
-            continue
-
-        type_zone = p.get("type", "")
-        groups[arrete_id][type_zone] = {
-            "niveau": p.get("niveauGravite") or "",
-            "debut": arrete.get("dateDebut") or "",
-            "fin": arrete.get("dateFin") or "",
-            "numero": arrete.get("numero") or "",
-        }
-
-    # Pour chaque arrêté, construire le texte du popup
-    details = {}
-    for arrete_id, types in groups.items():
-        lines = []
-        for t in TYPE_ORDER:
-            if t not in types:
-                continue
-            info = types[t]
-            niveau_label = NIVEAUX.get(info["niveau"], info["niveau"])
-            label = TYPE_LABEL.get(t, t)
-            lines.append(label)
-            if niveau_label:
-                lines.append(f"• {niveau_label}")
-            if info["debut"] and info["fin"]:
-                lines.append(f"du {format_date(info['debut'])} au {format_date(info['fin'])}")
-            elif info["debut"]:
-                lines.append(f"depuis le {format_date(info['debut'])}")
-        details[arrete_id] = "\n".join(lines)
-
-    return details
+def build_detail(type_zone: str, niveau_label: str, debut: str, fin: str, nom: str) -> str:
+    """Formate le popup HTML d'une zone."""
+    label = TYPE_LABEL.get(type_zone, type_zone)
+    parts = [f"<b>{label}</b>"]
+    if niveau_label:
+        parts.append(f"• {niveau_label}")
+    if debut and fin:
+        parts.append(f"du {format_date(debut)} au {format_date(fin)}")
+    elif debut:
+        parts.append(f"depuis le {format_date(debut)}")
+    if nom:
+        parts.append(f"<br><small>Zone : {nom}</small>")
+    return "<br>".join(parts)
 
 
 def dept_features(depts_geojson: dict) -> list:
@@ -155,7 +120,7 @@ def dept_features(depts_geojson: dict) -> list:
     return features
 
 
-def zone_features(zones_raw: list, arrete_details: dict) -> list:
+def zone_features(zones_raw: list) -> list:
     features = []
     for f in zones_raw:
         p = f.get("properties") or {}
@@ -167,35 +132,45 @@ def zone_features(zones_raw: list, arrete_details: dict) -> list:
 
         niveau = p.get("niveauGravite") or ""
         arrete = p.get("arreteRestriction") or {}
-        arrete_id = arrete.get("id")
+        nom = p.get("nom", "")
+        type_zone = p.get("type", "")
 
         features.append({
             "type": "Feature",
             "geometry": simplify_geometry(f.get("geometry")),
             "properties": {
                 "id": p.get("id", ""),
-                "nom": p.get("nom", ""),
+                "nom": nom,
                 "departement_code": dept_code,
                 "departement_nom": dept.get("nom", "") if isinstance(dept, dict) else "",
-                "type_zone": p.get("type", ""),
+                "type_zone": type_zone,
                 "niveau": niveau,
                 "niveau_label": NIVEAUX.get(niveau, niveau),
-                "severity": SEVERITY.get(niveau, 0) if niveau else "",
+                "severity": SEVERITY.get(niveau, "") if niveau else "",
                 "arrete_numero": arrete.get("numero", ""),
                 "debut": arrete.get("dateDebut", ""),
                 "fin": arrete.get("dateFin", ""),
-                "detail": arrete_details.get(arrete_id, ""),
+                "detail": build_detail(
+                    type_zone,
+                    NIVEAUX.get(niveau, niveau),
+                    arrete.get("dateDebut", ""),
+                    arrete.get("dateFin", ""),
+                    nom,
+                ),
             },
         })
+
+    # Trier par sévérité croissante : les zones les plus critiques sont rendues en dernier
+    # (donc visuellement au-dessus dans Flourish) et leur popup apparaît au survol
+    features.sort(key=lambda feat: SEVERITY.get(feat["properties"]["niveau"], 0))
     return features
 
 
 def build_flourish_geojson(depts: dict, zones: dict) -> dict:
     raw = zones.get("features", [])
-    arrete_details = build_arrete_details(raw)
 
     features = dept_features(depts)
-    features += zone_features(raw, arrete_details)
+    features += zone_features(raw)
 
     return {
         "type": "FeatureCollection",
