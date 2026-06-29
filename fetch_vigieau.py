@@ -344,16 +344,30 @@ def save(data: dict, path: str):
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
 
 
-def save_csv(features: list, path: str):
-    """Export CSV sans géométrie pour Flourish live data (jointure par id sur le GeoJSON)."""
-    cols = ["id", "nom", "departement_code", "departement_nom", "type_zone",
-            "niveau", "niveau_label", "severity", "debut", "fin", "arrete_numero", "detail"]
+COLS_BASE = ["id", "nom", "departement_code", "departement_nom", "type_zone",
+             "niveau", "niveau_label", "severity", "debut", "fin", "arrete_numero", "detail"]
+
+
+def geom_to_wkt(geom: dict) -> str:
+    if not geom:
+        return ""
+    try:
+        return shape(geom).wkt
+    except Exception:
+        return ""
+
+
+def save_csv(features: list, path: str, with_geom: bool = False):
+    cols = COLS_BASE + (["geometry"] if with_geom else [])
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         for feat in features:
             if feat["properties"].get("type_zone") != "departement":
-                w.writerow(feat["properties"])
+                row = dict(feat["properties"])
+                if with_geom:
+                    row["geometry"] = geom_to_wkt(feat.get("geometry"))
+                w.writerow(row)
 
 
 def main():
@@ -364,10 +378,14 @@ def main():
     zones_raw = fetch_geojson(GEOJSON_URL)
     all_zones = zone_features(zones_raw.get("features", []))
 
+    GEO_DIR = os.path.join(DATA_DIR, "csv-geo")
+    os.makedirs(GEO_DIR, exist_ok=True)
+
     # CSV par type
     for type_code, type_name in [("SUP", "surface"), ("SOU", "souterrain"), ("AEP", "robinet")]:
         filtered = [f for f in all_zones if f["properties"]["type_zone"] == type_code]
-        save_csv(filtered, os.path.join(CSV_DIR, f"{type_name}.csv"))
+        save_csv(filtered, os.path.join(CSV_DIR, f"{type_name}.csv"), with_geom=False)
+        save_csv(filtered, os.path.join(GEO_DIR, f"{type_name}.csv"), with_geom=True)
         counts = Counter(f["properties"]["niveau"] for f in filtered)
         print(f"\n── {TYPE_LABEL[type_code]} ({len(filtered)} zones) ──")
         for niveau, label in NIVEAUX.items():
@@ -375,11 +393,13 @@ def main():
 
     # CSV combiné avec popup 3 couches
     all_zones_enriched = enrich_combined_detail(all_zones)
-    save_csv(all_zones_enriched, os.path.join(CSV_DIR, "complet.csv"))
+    save_csv(all_zones_enriched, os.path.join(CSV_DIR, "complet.csv"), with_geom=False)
+    save_csv(all_zones_enriched, os.path.join(GEO_DIR, "complet.csv"), with_geom=True)
     print(f"\n── Combiné ({len(all_zones_enriched)} zones) ──")
 
-    print(f"\nCSV mis à jour : data/csv/ ({today})")
-    print("Boundaries fixes : data/reference_zones.geojson (lancer build_reference.py une fois)")
+    print(f"\ndata/csv/      → sans géométrie (jointure par id sur reference_zones.geojson)")
+    print(f"data/csv-geo/  → avec géométrie WKT (standalone dans Flourish)")
+    print(f"Mis à jour : {today}")
 
 
 if __name__ == "__main__":
