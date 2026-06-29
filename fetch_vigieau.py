@@ -344,16 +344,28 @@ def save(data: dict, path: str):
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
 
 
+def geom_to_wkt(geom: dict) -> str:
+    """Convertit une géométrie GeoJSON en WKT pour Flourish."""
+    if not geom:
+        return ""
+    try:
+        return shape(geom).wkt
+    except Exception:
+        return ""
+
+
 def save_csv(features: list, path: str):
-    """Export CSV des propriétés (sans géométrie) pour Flourish live data."""
+    """Export CSV avec géométrie WKT pour Flourish live data."""
     cols = ["id", "nom", "departement_code", "departement_nom", "type_zone",
-            "niveau", "niveau_label", "severity", "debut", "fin", "arrete_numero", "detail"]
+            "niveau", "niveau_label", "severity", "debut", "fin", "arrete_numero", "detail", "geometry"]
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         for feat in features:
             if feat["properties"].get("type_zone") != "departement":
-                w.writerow(feat["properties"])
+                row = dict(feat["properties"])
+                row["geometry"] = geom_to_wkt(feat.get("geometry"))
+                w.writerow(row)
 
 
 def main():
