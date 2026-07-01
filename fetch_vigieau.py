@@ -488,6 +488,11 @@ def main():
     size_kb2 = os.path.getsize(os.path.join(CSV_DIR, "flourish_geo.csv")) // 1024
     print(f"flourish_geo.csv : {size_kb2} Ko")
 
+    # CSV Flourish haute qualité (même géométrie que les GeoJSON de base)
+    save_csv_flourish(all_zones_enriched, os.path.join(CSV_DIR, "flourish_geo_hd.csv"))
+    size_kb3 = os.path.getsize(os.path.join(CSV_DIR, "flourish_geo_hd.csv")) // 1024
+    print(f"flourish_geo_hd.csv : {size_kb3} Ko")
+
     print(f"\nLatest  : data/latest/*.geojson")
     print(f"CSV     : data/csv/*.csv (sans géométrie, jointure par id)")
     print(f"Mis à jour : {today}")
