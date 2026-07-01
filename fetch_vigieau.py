@@ -330,7 +330,10 @@ def zone_features(zones_raw: list) -> list:
 
 
 def build_geojson(dept_feats: list, zone_feats: list) -> dict:
+    label = today_label()
     features = dept_feats + zone_feats
+    for f in features:
+        f["properties"]["date_maj"] = label
     return {
         "type": "FeatureCollection",
         "generated_at": datetime.date.today().isoformat(),
