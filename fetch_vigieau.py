@@ -380,6 +380,22 @@ def save_csv(features: list, path: str, with_geom: bool = False):
                 w.writerow(row)
 
 
+def save_csv_flourish(features: list, path: str):
+    """CSV Flourish : geometry = JSON string (format natif Flourish), simplifié pour URL live."""
+    cols = ["geometry"] + COLS_BASE
+    label = today_label()
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+        w.writeheader()
+        for feat in features:
+            if feat["properties"].get("type_zone") != "departement":
+                row = dict(feat["properties"])
+                row["date_maj"] = label
+                geom = feat.get("geometry")
+                row["geometry"] = json.dumps(geom, separators=(",", ":")) if geom else ""
+                w.writerow(row)
+
+
 def main():
     os.makedirs(LATEST_DIR, exist_ok=True)
     os.makedirs(ARCHIVES_DIR, exist_ok=True)
@@ -466,6 +482,11 @@ def main():
     save(flourish_geojson, os.path.join(LATEST_DIR, "flourish.geojson"))
     size_kb = os.path.getsize(os.path.join(LATEST_DIR, "flourish.geojson")) // 1024
     print(f"flourish.geojson : {size_kb} Ko")
+
+    # CSV Flourish avec géométrie allégée en JSON string (pour URL live)
+    save_csv_flourish(flourish_zones, os.path.join(CSV_DIR, "flourish_geo.csv"))
+    size_kb2 = os.path.getsize(os.path.join(CSV_DIR, "flourish_geo.csv")) // 1024
+    print(f"flourish_geo.csv : {size_kb2} Ko")
 
     print(f"\nLatest  : data/latest/*.geojson")
     print(f"CSV     : data/csv/*.csv (sans géométrie, jointure par id)")
