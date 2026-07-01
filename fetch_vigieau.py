@@ -345,7 +345,7 @@ def save(data: dict, path: str):
 
 
 COLS_BASE = ["id", "nom", "departement_code", "departement_nom", "type_zone",
-             "niveau", "niveau_label", "severity", "debut", "fin", "arrete_numero", "detail"]
+             "niveau", "niveau_label", "severity", "debut", "fin", "arrete_numero", "detail", "date_maj"]
 
 
 def geom_to_wkt(geom: dict) -> str:
@@ -357,14 +357,21 @@ def geom_to_wkt(geom: dict) -> str:
         return ""
 
 
+def today_label() -> str:
+    d = datetime.date.today()
+    return f"{d.day} {MOIS[d.month - 1]} {d.year}"
+
+
 def save_csv(features: list, path: str, with_geom: bool = False):
     cols = COLS_BASE + (["geometry"] if with_geom else [])
+    label = today_label()
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         for feat in features:
             if feat["properties"].get("type_zone") != "departement":
                 row = dict(feat["properties"])
+                row["date_maj"] = label
                 if with_geom:
                     row["geometry"] = geom_to_wkt(feat.get("geometry"))
                 w.writerow(row)
