@@ -409,6 +409,64 @@ def main():
     save(combined, os.path.join(LATEST_DIR, "complet.geojson"))
     save_csv(all_zones_enriched, os.path.join(CSV_DIR, "complet.csv"), with_geom=False)
     print(f"\n── Combiné ({len(all_zones_enriched)} zones) ──")
+
+    # Version allégée pour Flourish (URL live) — simplification agressive + coords tronquées
+    print("\nGénération du GeoJSON Flourish allégé…")
+
+    def round_coords(geom, decimals=4):
+        """Réduit les décimales des coordonnées pour alléger le fichier."""
+        if not geom:
+            return geom
+        import copy
+        def _round(obj):
+            if isinstance(obj, list):
+                if obj and isinstance(obj[0], (int, float)):
+                    return [round(v, decimals) for v in obj]
+                return [_round(i) for i in obj]
+            return obj
+        g = copy.deepcopy(geom)
+        g["coordinates"] = _round(g["coordinates"])
+        return g
+
+    def compact_detail(props):
+        """Version allégée du popup HTML (sans inline styles lourds)."""
+        COLOR = {"vigilance":"#fff9bd","alerte":"orange","alerte_renforcee":"red","crise":"maroon","":"#e6e6e6"}
+        TEXT  = {"vigilance":"#333","alerte":"#fff","alerte_renforcee":"#fff","crise":"#fff","":"#666"}
+        blocks = []
+        # Le champ detail du complet contient déjà les 3 blocs — on le recompacte
+        niveau = props.get("niveau","")
+        label  = props.get("niveau_label","Aucune restriction")
+        nom    = props.get("nom","")
+        type_z = props.get("type_zone","")
+        debut  = props.get("debut","")
+        fin    = props.get("fin","")
+        bg = COLOR.get(niveau,"#e6e6e6"); tc = TEXT.get(niveau,"#333")
+        b = f'<b style="color:{bg}">{label}</b>'
+        parts = [TYPE_LABEL.get(type_z,type_z), b]
+        if debut and fin: parts.append(f"{format_date(debut)}→{format_date(fin)}")
+        elif debut: parts.append(f"depuis {format_date(debut)}")
+        if nom: parts.append(f"<i>{nom}</i>")
+        return "<br>".join(parts)
+
+    flourish_base = dept_features(depts_raw)
+    flourish_zones = []
+    for f in all_zones_enriched:
+        light = dict(f)
+        light["geometry"] = round_coords(simplify_geometry(f.get("geometry"), tolerance=0.05))
+        p = dict(f["properties"])
+        p["detail"] = compact_detail(p)
+        light["properties"] = p
+        flourish_zones.append(light)
+    flourish_base_light = []
+    for f in flourish_base:
+        light = dict(f)
+        light["geometry"] = round_coords(simplify_geometry(f.get("geometry"), tolerance=0.05))
+        flourish_base_light.append(light)
+    flourish_geojson = build_geojson(flourish_base_light, flourish_zones)
+    save(flourish_geojson, os.path.join(LATEST_DIR, "flourish.geojson"))
+    size_kb = os.path.getsize(os.path.join(LATEST_DIR, "flourish.geojson")) // 1024
+    print(f"flourish.geojson : {size_kb} Ko")
+
     print(f"\nLatest  : data/latest/*.geojson")
     print(f"CSV     : data/csv/*.csv (sans géométrie, jointure par id)")
     print(f"Mis à jour : {today}")
