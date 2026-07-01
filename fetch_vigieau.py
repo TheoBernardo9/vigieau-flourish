@@ -380,20 +380,22 @@ def save_csv(features: list, path: str, with_geom: bool = False):
                 w.writerow(row)
 
 
-def save_csv_flourish(features: list, path: str):
-    """CSV Flourish : geometry = JSON string (format natif Flourish), simplifié pour URL live."""
+def save_csv_flourish(features: list, path: str, include_depts: bool = False):
+    """CSV Flourish : geometry = JSON string (format natif Flourish)."""
     cols = ["geometry"] + COLS_BASE
     label = today_label()
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         for feat in features:
-            if feat["properties"].get("type_zone") != "departement":
-                row = dict(feat["properties"])
-                row["date_maj"] = label
-                geom = feat.get("geometry")
-                row["geometry"] = json.dumps(geom, separators=(",", ":")) if geom else ""
-                w.writerow(row)
+            is_dept = feat["properties"].get("type_zone") == "departement"
+            if is_dept and not include_depts:
+                continue
+            row = dict(feat["properties"])
+            row["date_maj"] = label
+            geom = feat.get("geometry")
+            row["geometry"] = json.dumps(geom, separators=(",", ":")) if geom else ""
+            w.writerow(row)
 
 
 def main():
@@ -488,8 +490,8 @@ def main():
     size_kb2 = os.path.getsize(os.path.join(CSV_DIR, "flourish_geo.csv")) // 1024
     print(f"flourish_geo.csv : {size_kb2} Ko")
 
-    # CSV Flourish haute qualité (même géométrie que les GeoJSON de base)
-    save_csv_flourish(all_zones_enriched, os.path.join(CSV_DIR, "flourish_geo_hd.csv"))
+    # CSV Flourish haute qualité (même géométrie que les GeoJSON de base, avec départements vides)
+    save_csv_flourish(base + all_zones_enriched, os.path.join(CSV_DIR, "flourish_geo_hd.csv"), include_depts=True)
     size_kb3 = os.path.getsize(os.path.join(CSV_DIR, "flourish_geo_hd.csv")) // 1024
     print(f"flourish_geo_hd.csv : {size_kb3} Ko")
 
