@@ -86,8 +86,14 @@ def is_dom_tom(dept_code: str) -> bool:
 def fetch_geojson(url: str) -> dict:
     print(f"Téléchargement de {url}…")
     req = urllib.request.Request(url, headers={"User-Agent": "vigieau-flourish/1.0"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read())
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        chunks = []
+        while True:
+            chunk = resp.read(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return json.loads(b"".join(chunks))
 
 
 def simplify_geometry(geom, tolerance=0.001):
