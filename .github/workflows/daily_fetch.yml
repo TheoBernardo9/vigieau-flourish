@@ -21,6 +21,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Installe les dépendances
+        run: pip install shapely
+
       - name: Fetch et génère le GeoJSON
         run: python fetch_vigieau.py
 
