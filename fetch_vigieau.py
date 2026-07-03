@@ -439,7 +439,7 @@ def main():
 
     def round_coords(geom, decimals=4):
         """Réduit les décimales des coordonnées pour alléger le fichier."""
-        if not geom:
+        if not geom or "coordinates" not in geom:
             return geom
         import copy
         def _round(obj):
